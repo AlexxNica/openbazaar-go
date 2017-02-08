@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/OpenBazaar/jsonpb"
 	"github.com/OpenBazaar/openbazaar-go/bitcoin/exchange"
@@ -47,7 +48,10 @@ import (
 	homedir "github.com/mitchellh/go-homedir"
 )
 
-const testNet = true
+const (
+	testnet          = true
+	imageConcurrency = 30
+)
 
 var fileLogFormat = logging.MustStringFormatter(`%{time:15:04:05.000} [%{shortfunc}] [%{level}] %{message}`)
 
@@ -59,14 +63,14 @@ func main() {
 	var err error
 	repoPath := *repoPathFlag
 	if repoPath == "" {
-		repoPath, err = getRepoPath(testNet)
+		repoPath, err = getRepoPath(testnet)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
 
 	// Create repo structure
-	sqliteDB, err := initializeRepo(repoPath, "", "", testNet)
+	sqliteDB, err := initializeRepo(repoPath, "", "", testnet)
 	if err != repo.ErrRepoExists {
 		if err != nil {
 			log.Fatal(err)
@@ -84,9 +88,37 @@ func main() {
 
 	log.Print("Peer ID: ", node.IpfsNode.Identity.Pretty())
 
+	// Start getting images.
+	randomImages := make(chan *randomImage, imageConcurrency)
+	stopGettingImages := make(chan struct{})
+	for i := 0; i < imageConcurrency; i++ {
+		go func() {
+			for {
+				select {
+				case <-stopGettingImages:
+					return
+				default:
+					image, err := newRandomImage(node)
+					if err != nil {
+						log.Fatal(err)
+					}
+					randomImages <- image
+					log.Print("Loaded random image")
+
+					var reloadImage func()
+					reloadImage = func() {
+						randomImages <- image
+						time.AfterFunc(5*time.Second, reloadImage)
+					}
+					time.AfterFunc(5*time.Second, reloadImage)
+				}
+			}
+		}()
+	}
+
 	// Set fake data
 	log.Print("Creating profile")
-	profile, err := setFakeProfile(node)
+	profile, err := setFakeProfile(node, randomImages)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -95,12 +127,14 @@ func main() {
 		listingCount := rand.Intn(1000)
 		log.Printf("Creating %d listings", listingCount)
 		for i := 0; i < listingCount; i++ {
-			err = addFakeListing(node)
+			err = addFakeListing(node, randomImages)
 			if err != nil {
 				log.Fatal(err)
 			}
 		}
 	}
+
+	close(stopGettingImages)
 
 	// Publish data to IPFS
 	log.Print("Publishing to IPFS")
@@ -127,7 +161,7 @@ func getRepoPath(isTestnet bool) (string, error) {
 	}
 
 	// Append testnet flag if on testnet
-	if testNet {
+	if testnet {
 		directoryName += "-testnet"
 	}
 
@@ -143,7 +177,7 @@ func getRepoPath(isTestnet bool) (string, error) {
 
 func initializeRepo(dataDir, password, mnemonic string, testnet bool) (*db.SQLiteDatastore, error) {
 	// Database
-	sqliteDB, err := db.Create(dataDir, password, testNet)
+	sqliteDB, err := db.Create(dataDir, password, testnet)
 	if err != nil {
 		return sqliteDB, err
 	}
@@ -302,8 +336,8 @@ func newWallet(repoPath string, db *db.SQLiteDatastore) (*spvwallet.SPVWallet, e
 	return wallet, nil
 }
 
-func setFakeProfile(node *core.OpenBazaarNode) (*pb.Profile, error) {
-	profile := newRandomProfile()
+func setFakeProfile(node *core.OpenBazaarNode, randomImages chan (*randomImage)) (*pb.Profile, error) {
+	profile := newRandomProfile(randomImages)
 	err := node.UpdateProfile(profile)
 	if err != nil {
 		return nil, err
@@ -311,8 +345,8 @@ func setFakeProfile(node *core.OpenBazaarNode) (*pb.Profile, error) {
 	return profile, nil
 }
 
-func addFakeListing(node *core.OpenBazaarNode) error {
-	ld := newRandomListing()
+func addFakeListing(node *core.OpenBazaarNode, randomImages chan (*randomImage)) error {
+	ld := newRandomListing(randomImages)
 
 	// Sign
 	contract, err := node.SignListing(ld.Listing)

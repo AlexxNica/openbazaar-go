@@ -7,14 +7,10 @@ import (
 	"github.com/icrowley/fake"
 )
 
-func newRandomProfile() *pb.Profile {
+func newRandomProfile(randomImages chan (*randomImage)) *pb.Profile {
 	name := "🤖" + fake.Company()
 
 	vendor := true
-	if rand.Intn(3) == 0 {
-		vendor = false
-		name = fake.FullName()
-	}
 
 	moderator := false
 	modInfo := pb.Moderator{}
@@ -34,6 +30,9 @@ func newRandomProfile() *pb.Profile {
 			FeeType:    pb.Moderator_Fee_PERCENTAGE,
 		}
 	}
+
+	avatar := <-randomImages
+	header := <-randomImages
 
 	return &pb.Profile{
 		Handle:           "@" + fake.UserName(),
@@ -58,5 +57,21 @@ func newRandomProfile() *pb.Profile {
 		TextColor:          "#" + fake.HexColor(),
 		HighlightColor:     "#" + fake.HexColor(),
 		HighlightTextColor: "#" + fake.HexColor(),
+
+		AvatarHashes: &pb.Profile_Image{
+			Tiny:     avatar.Tiny,
+			Small:    avatar.Small,
+			Medium:   avatar.Medium,
+			Large:    avatar.Large,
+			Original: avatar.Original,
+		},
+
+		HeaderHashes: &pb.Profile_Image{
+			Tiny:     header.Tiny,
+			Small:    header.Small,
+			Medium:   header.Medium,
+			Large:    header.Large,
+			Original: header.Original,
+		},
 	}
 }
