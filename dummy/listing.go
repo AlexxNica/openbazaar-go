@@ -3,6 +3,7 @@ package main
 import (
 	"math/rand"
 	"strconv"
+	"time"
 
 	"github.com/OpenBazaar/openbazaar-go/pb"
 	"github.com/golang/protobuf/ptypes/timestamp"
@@ -23,7 +24,7 @@ var categories = []string{
 	"Other",
 }
 
-func newRandomListing() *pb.Listing {
+func newRandomListing(randomImages chan (*randomImage)) *pb.Listing {
 	title := fake.ProductName()
 	slug := slugify(title)
 	// sku := slug + "-" + fake.Digits()
@@ -88,6 +89,30 @@ func newRandomListing() *pb.Listing {
 		countries[i] = pb.CountryCode(rand.Intn(255))
 	}
 
+	imageCount := rand.Intn(6) + 1
+	images := make([]*pb.Listing_Item_Image, 0, imageCount)
+	stopGettingImages := make(chan (struct{}))
+	time.AfterFunc(10*time.Second, func() {
+		close(stopGettingImages)
+	})
+
+IMAGE_LOOP:
+	for i := 0; i < imageCount; i++ {
+		select {
+		case <-stopGettingImages:
+			break IMAGE_LOOP
+		case image := <-randomImages:
+			images = append(images, &pb.Listing_Item_Image{
+				Filename: image.filename,
+				Tiny:     image.Tiny,
+				Small:    image.Small,
+				Medium:   image.Medium,
+				Large:    image.Large,
+				Original: image.Original,
+			})
+		}
+	}
+
 	return &pb.Listing{
 		Slug: slug,
 		Metadata: &pb.Listing_Metadata{
@@ -110,16 +135,7 @@ func newRandomListing() *pb.Listing {
 			Categories:     []string{categories[rand.Intn(len(categories))]},
 			Grams:          float32(rand.Intn(5000)),
 			Condition:      conditions[rand.Intn(len(conditions))],
-			Images: []*pb.Listing_Item_Image{
-				{
-					Filename: "example.jpg",
-					Original: "QmdfiTnhj1oqiCDmhxu1gdgW6ZqtR7D6ZE7j7CqWUHgKJ8",
-					Tiny:     "QmbKPEBbzVwax8rnrdxLepfmNkdTqnw2RSfJE19iax3fLK",
-					Small:    "QmQ77aAsYjs1rxcp7xZ5qUki1RGDGjQ99cok3ynUMF8Sc5",
-					Medium:   "QmVoh493xbSaKYV9yLtEapaGQ7J31gdCiDQHGSd86PNo8B",
-					Large:    "QmUWuTZhjUuY8VYWVZrcodsrsbQvckSZwTRxmJ3Avhnw1y",
-				},
-			},
+			Images:         images,
 		},
 		ShippingOptions: []*pb.Listing_ShippingOption{
 			{
@@ -138,7 +154,7 @@ func newRandomListing() *pb.Listing {
 					Rules: []*pb.Listing_ShippingOption_ShippingRules_Rule{
 						{
 							MinRange: 0,
-							MaxRange: 99999999,
+							MaxRange: 999,
 							Price:    uint64(rand.Intn(999)),
 						},
 					},
