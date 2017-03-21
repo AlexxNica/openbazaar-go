@@ -51,6 +51,10 @@ const testNet = true
 
 var fileLogFormat = logging.MustStringFormatter(`%{time:15:04:05.000} [%{shortfunc}] [%{level}] %{message}`)
 
+func init() {
+	core.USERAGENT = core.USERAGENT + "dummy"
+}
+
 func main() {
 	// Get repo path to use
 	repoPathFlag := flag.String("datadir", "", "The directory to initialize")
