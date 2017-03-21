@@ -15,6 +15,9 @@ import (
 	"runtime"
 	"strings"
 
+	bstk "github.com/OpenBazaar/go-blockstackclient"
+	"golang.org/x/net/proxy"
+
 	"github.com/OpenBazaar/jsonpb"
 	"github.com/OpenBazaar/openbazaar-go/bitcoin/exchange"
 	"github.com/OpenBazaar/openbazaar-go/core"
@@ -41,7 +44,6 @@ import (
 
 	recpb "gx/ipfs/QmdM4ohF7cr4MvAECVeD3hRA3HtZrk1ngaek4n8ojVT87h/go-libp2p-record/pb"
 
-	bstk "github.com/OpenBazaar/go-blockstackclient"
 	namepb "github.com/ipfs/go-ipfs/namesys/pb"
 	"github.com/ipfs/go-ipfs/repo/fsrepo"
 	homedir "github.com/mitchellh/go-homedir"
@@ -71,10 +73,8 @@ func main() {
 
 	// Create repo structure
 	sqliteDB, err := initializeRepo(repoPath, "", "", testNet)
-	if err != repo.ErrRepoExists {
-		if err != nil {
-			log.Fatal(err)
-		}
+	if err != nil && err != repo.ErrRepoExists {
+		log.Fatal(err)
 	}
 
 	// Create user-agent file
@@ -168,8 +168,7 @@ func newNode(repoPath string, db *db.SQLiteDatastore) (*core.OpenBazaarNode, err
 		return nil, err
 	}
 
-	cctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	cctx := context.Background()
 
 	// Get config and identity info
 	cfg, err := r.Config()
@@ -256,6 +255,8 @@ func newNode(repoPath string, db *db.SQLiteDatastore) (*core.OpenBazaarNode, err
 		return nil, err
 	}
 
+	var torDialer proxy.Dialer
+
 	core.Node = &core.OpenBazaarNode{
 		Context:            ctx,
 		IpfsNode:           nd,
@@ -263,16 +264,16 @@ func newNode(repoPath string, db *db.SQLiteDatastore) (*core.OpenBazaarNode, err
 		RepoPath:           repoPath,
 		Datastore:          db,
 		Wallet:             wallet,
-		Resolver:           bstk.NewBlockStackClient(resolverURL),
-		ExchangeRates:      exchange.NewBitcoinPriceFetcher(),
-		MessageStorage:     selfhosted.NewSelfHostedStorage(repoPath, ctx, gatewayUrls),
+		Resolver:           bstk.NewBlockStackClient(resolverURL, torDialer),
+		ExchangeRates:      exchange.NewBitcoinPriceFetcher(torDialer),
+		MessageStorage:     selfhosted.NewSelfHostedStorage(repoPath, ctx, gatewayUrls, torDialer),
 		CrosspostGateways:  gatewayUrls,
 		UserAgent:          core.USERAGENT,
-		PointerRepublisher: rep.NewPointerRepublisher(nd, db),
+		PointerRepublisher: rep.NewPointerRepublisher(nd, db, func() bool { return false }),
 	}
 
 	core.Node.Service = service.New(core.Node, ctx, db)
-	core.Node.MessageRetriever = ret.NewMessageRetriever(db, ctx, nd, core.Node.Service, 16, core.Node.SendOfflineAck)
+	core.Node.MessageRetriever = ret.NewMessageRetriever(db, ctx, nd, nil, core.Node.Service, 16, torDialer, core.Node.SendOfflineAck)
 
 	go core.Node.MessageRetriever.Run()
 	go core.Node.PointerRepublisher.Run()
@@ -319,13 +320,7 @@ func addFakeListing(node *core.OpenBazaarNode) error {
 	ld := newRandomListing()
 
 	// Sign
-	contract, err := node.SignListing(ld.Listing)
-	if err != nil {
-		return err
-	}
-
-	// Update inventory
-	err = node.SetListingInventory(ld.Listing, ld.Inventory)
+	contract, err := node.SignListing(ld)
 	if err != nil {
 		return err
 	}
@@ -351,7 +346,12 @@ func addFakeListing(node *core.OpenBazaarNode) error {
 		return err
 	}
 
-	// Update index
+	// Update inventory and index
+	err = node.SetListingInventory(ld)
+	if err != nil {
+		return err
+	}
+
 	err = node.UpdateListingIndex(contract)
 	if err != nil {
 		return err

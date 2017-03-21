@@ -40,23 +40,34 @@ func newRandomProfile() *pb.Profile {
 		Name:             name,
 		Location:         fake.City() + ", " + fake.Country(),
 		About:            fake.Paragraphs(),
-		Email:            fake.EmailAddress(),
-		ShortDescription: "I am a robot.\n\n" + fake.Sentences(),
+		ShortDescription: fake.Sentences(),
+		ContactInfo: &pb.Profile_Contact{
+			Website:     fake.Word() + ".example.com",
+			Email:       fake.EmailAddress(),
+			PhoneNumber: "555-5555",
+		},
 
-		Vendor:    vendor,
-		Nsfw:      isNSFW(),
-		Moderator: moderator,
-		ModInfo:   &modInfo,
+		Vendor:        vendor,
+		Nsfw:          isNSFW(),
+		Moderator:     moderator,
+		ModeratorInfo: &modInfo,
 
-		FollowerCount:  uint32(rand.Intn(9999)),
-		FollowingCount: uint32(rand.Intn(9999)),
-		AvgRating:      uint32(rand.Intn(5)),
-		NumRatings:     uint32(rand.Intn(9999)),
+		Stats: &pb.Profile_Stats{
+			FollowerCount:  uint32(rand.Intn(9999)),
+			FollowingCount: uint32(rand.Intn(9999)),
+			AverageRating:  rand.Float32() * 5,
+			RatingCount:    uint32(rand.Intn(9999)),
 
-		PrimaryColor:       "#" + fake.HexColor(),
-		SecondaryColor:     "#" + fake.HexColor(),
-		TextColor:          "#" + fake.HexColor(),
-		HighlightColor:     "#" + fake.HexColor(),
-		HighlightTextColor: "#" + fake.HexColor(),
+			// TODO
+			// ListingsCount
+		},
+
+		Colors: &pb.Profile_Colors{
+			Primary:       "#" + fake.HexColor(),
+			Secondary:     "#" + fake.HexColor(),
+			Text:          "#" + fake.HexColor(),
+			Highlight:     "#" + fake.HexColor(),
+			HighlightText: "#" + fake.HexColor(),
+		},
 	}
 }
