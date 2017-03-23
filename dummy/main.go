@@ -158,16 +158,6 @@ func initializeRepo(dataDir, password, mnemonic string, testnet bool) (*db.SQLit
 		return sqliteDB, err
 	}
 
-	// idKey, err := sqliteDB.Config().GetIdentityKey()
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// err = sqliteDB.Config().Init(mnemonic, idKey, password)
-	// if err != nil {
-	// 	return nil, err
-	// }
-
 	return sqliteDB, nil
 }
 
@@ -178,17 +168,12 @@ func newNode(repoPath string, db *db.SQLiteDatastore) (*core.OpenBazaarNode, err
 		return nil, err
 	}
 
-	cctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	cctx := context.Background()
 
 	// Get config and identity info
 	cfg, err := r.Config()
 	if err != nil {
 		return nil, err
-	}
-
-	if db.Config() == nil {
-		panic("asdf")
 	}
 
 	identityKey, err := db.Config().GetIdentityKey()
@@ -364,12 +349,6 @@ func addFakeListing(node *core.OpenBazaarNode) error {
 	}
 
 	if _, err := f.WriteString(out); err != nil {
-		return err
-	}
-
-	// Update index
-	err = node.UpdateListingIndex(contract)
-	if err != nil {
 		return err
 	}
 
